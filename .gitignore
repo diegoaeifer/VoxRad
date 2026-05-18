@@ -25,3 +25,25 @@ config/settings.ini
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Medical imaging data — never commit
+*.dcm
+*.dicom
+*.nii
+*.nii.gz
+*.mha
+*.mhd
+*.nrrd
+*.mnc
+
+# MRI / volumetric raw data
+*.h5
+*.hdf5
+
+# Model weights & checkpoints
+*.pt
+*.pth
+*.ckpt
+*.pts
+*.trch
+*.bin
