@@ -292,7 +292,7 @@ def open_settings():
 
         transcription_model_label = tk.Label(transcription_tab, text="Select Model:")
         transcription_model_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
-        transcription_model_combobox = ttk.Combobox(transcription_tab, width=25, state="readonly")
+        transcription_model_combobox = ttk.Combobox(transcription_tab, width=25, state="normal")
         transcription_model_combobox.grid(row=3, column=1, padx=5, pady=5, sticky="w")
 
         def open_url(url):
@@ -311,7 +311,7 @@ def open_settings():
         whisper_size_label = tk.Label(transcription_tab, text="Model Size:")
         whisper_size_label.grid(row=6, column=0, padx=5, pady=2, sticky="w")
         whisper_size_var = tk.StringVar(transcription_tab, value=config.WHISPER_MODEL_SIZE)
-        whisper_size_dropdown = ttk.Combobox(transcription_tab, textvariable=whisper_size_var, values=["tiny", "base", "small", "medium", "large-v3"], state="readonly", width=12)
+        whisper_size_dropdown = ttk.Combobox(transcription_tab, textvariable=whisper_size_var, values=["tiny", "base", "small", "medium", "large-v3", "large-v3-turbo"], state="readonly", width=12)
         whisper_size_dropdown.grid(row=6, column=1, padx=5, pady=2, sticky="w")
 
         whisper_quant_label = tk.Label(transcription_tab, text="Quantization:")

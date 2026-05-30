@@ -213,16 +213,22 @@ def fetch_models(base_url, api_key, model_combobox):
         text_key_path = os.path.join(os.path.dirname(config.config_path), "text_key.encrypted")# Corrected line
 
         # Check if the text key file exists
-        if os.path.exists(text_key_path):
-            # Check if API key is loaded; if not, attempt to load it
-            if not config.TEXT_API_KEY:
+        is_local = "localhost" in base_url or "127.0.0.1" in base_url
+        # Allow fetching local models without requiring an API key
+        if is_local or os.path.exists(text_key_path):
+            current_api_key = config.TEXT_API_KEY
+            if not is_local and os.path.exists(text_key_path) and not current_api_key:
                 password = get_password_from_user("Enter your password to unlock the Text key:", "text")
                 if password:
                     if not load_text_key(password=password):
                         raise ValueError("Incorrect password for Text Key.")
+                    current_api_key = config.TEXT_API_KEY
+            
+            if not current_api_key:
+                current_api_key = "ollama"
 
             print("Initializing Client")
-            client = openai.OpenAI(api_key=config.TEXT_API_KEY, base_url=base_url)
+            client = openai.OpenAI(api_key=current_api_key, base_url=base_url)
             print("Client initialized, fetching models")
             models = client.models.list()
             print("Models fetched")
@@ -249,22 +255,26 @@ def fetch_transcription_models(base_url, api_key, model_combobox):
         transcription_key_path = os.path.join(os.path.dirname(config.config_path), "transcription_key.encrypted") # Corrected line
 
         # Check if the key file exists
-        if os.path.exists(transcription_key_path):
-            # Check if API key is loaded; if not, attempt to load it
-            if not config.TRANSCRIPTION_API_KEY:
+        is_local = "localhost" in base_url or "127.0.0.1" in base_url
+        if is_local or os.path.exists(transcription_key_path):
+            current_api_key = config.TRANSCRIPTION_API_KEY
+            if not is_local and os.path.exists(transcription_key_path) and not current_api_key:
                 password = get_password_from_user("Enter your password to unlock the Transcription key:", "transcription")
                 if password:
                     if not load_transcription_key(password=password):
                         raise ValueError("Incorrect password for Transcription Key.")
+                    current_api_key = config.TRANSCRIPTION_API_KEY
+            
+            if not current_api_key:
+                current_api_key = "local"
 
             print("Initializing Client")
-            client = openai.OpenAI(api_key=config.TRANSCRIPTION_API_KEY, base_url=base_url)
+            client = openai.OpenAI(api_key=current_api_key, base_url=base_url)
             print("Client initialized, fetching models")
             models = client.models.list()
             print("Models fetched")
-            # Filter out models other than those with whisper
-            included_prefix = "whisper"
-            model_ids = [model.id for model in models.data if included_prefix in model.id]
+            # Filter out models other than those with whisper or parakeet
+            model_ids = [model.id for model in models.data if "whisper" in model.id.lower() or "parakeet" in model.id.lower()]
             print(f"Model IDs: {model_ids}")
 
             model_combobox['values'] = model_ids

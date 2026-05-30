@@ -25,11 +25,11 @@ def configure_defaults():
         
     # Set requested defaults for local operation
     config_parser["DEFAULT"]["ASRBackend"] = "local"
-    config_parser["DEFAULT"]["WhisperModelSize"] = "small"
+    config_parser["DEFAULT"]["WhisperModelSize"] = "large-v3-turbo"
     config_parser["DEFAULT"]["WhisperQuantization"] = "int8"
     config_parser["DEFAULT"]["WhisperLanguage"] = "pt"
     config_parser["DEFAULT"]["TextBaseURL"] = "http://localhost:11434/v1"
-    config_parser["DEFAULT"]["SelectedModel"] = "llama3.1:latest"
+    config_parser["DEFAULT"]["SelectedModel"] = "hf.co/QuantFactory/Clinical-BR-LlaMA-2-7B-GGUF:Q4_K_M"
     
     with open(config_path, "w") as f:
         config_parser.write(f)

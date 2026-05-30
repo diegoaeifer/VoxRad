@@ -47,9 +47,17 @@ def _get_file_list(directory: str, ext: str) -> List[str]:
     return [f for f in os.listdir(directory) if f.endswith(ext)]
 
 import re
+
+def _get_openai_client():
+    """Helper to initialize OpenAI client supporting local endpoints without keys."""
+    api_key = config.TEXT_API_KEY
+    if not api_key:
+        api_key = "ollama"
+    return OpenAI(api_key=api_key, base_url=config.BASE_URL)
+
 def _select_template(transcript: str, attempt: int = 1) -> Optional[str]:
     """Use function calling to select template name, with fallback to JSON chat completion"""
-    client = OpenAI(api_key=config.TEXT_API_KEY, base_url=config.BASE_URL)
+    client = _get_openai_client()
     templates = _get_file_list(TEMPLATES_DIR, ".txt") + _get_file_list(TEMPLATES_DIR, ".md")
 
     tools = [{
@@ -99,44 +107,33 @@ def _select_template(transcript: str, attempt: int = 1) -> Optional[str]:
         except Exception as e:
              print(f"Attempt {attempt}: Tool call attempt failed: {e}")# Debug log
     
-    # Fallback to JSON chat completion
+    # Fallback to simple text matching
     try:
-        prompt = f"Select the most appropriate template from the following list: {templates} to structure this transcript:\n\n{transcript}.\n\nYour output should ONLY be a JSON object with the following structure: {{\"template\": \"selected_template_filename\"}}. Ensure a valid JSON is generated"
-        print (f"Attempt {attempt}: Trying JSON fallback for template selection")
+        prompt = f"Selecione o modelo mais apropriado da lista {templates} para estruturar esta transcrição:\n\n{transcript}.\n\nResponda APENAS com o nome exato do arquivo (por exemplo: 'HRCT_Thorax.txt'), sem explicações, sem JSON e sem formatação."
+        print(f"Attempt {attempt}: Trying simple fallback for template selection")
         response = client.chat.completions.create(
             model=config.SELECTED_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature = 0.1
-            )
-        print(f"Attempt {attempt}: JSON fallback response received: {response}" ) # Debug log
+            temperature=0.1,
+            max_tokens=50
+        )
+        print(f"Attempt {attempt}: Simple fallback response received: {response}")
         if response.choices and response.choices[0].message.content:
             content = response.choices[0].message.content.strip()
+            # Check if any template matches a substring in the content
+            for temp in templates:
+                if temp.lower() in content.lower():
+                    print(f"Attempt {attempt}: Simple fallback success, selected template: {temp}")
+                    return temp
             
-            # Attempt to extract JSON from markdown code block, else parse if it is not code block
-            match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', content)
-            if match:
-                json_string = match.group(1).strip()
-            else:
-                json_string = content # Try to parse content if it is not a code block
-
-            try:
-                json_output = json.loads(json_string)
-                if "template" in json_output and json_output["template"] in templates:
-                    print(f"Attempt {attempt}: JSON fallback success, selected template: {json_output['template']}") # Debug log
-                    return json_output["template"]
-                else:
-                    print(f"Attempt {attempt}: Invalid JSON format or template not found in JSON fallback")
-                    return _select_template(transcript, attempt + 1) # Recursive retry
-            except JSONDecodeError as e:
-                print (f"Attempt {attempt}: Invalid JSON received from model: {e}")
-                return _select_template(transcript, attempt + 1) #Recursive retry
-                
+            print(f"Attempt {attempt}: No matching template filename found in response: '{content}'")
+            return _select_template(transcript, attempt + 1)
         else:
-          print(f"Attempt {attempt}: No response content received during JSON fallback")
-          return _select_template(transcript, attempt + 1) # Recursive retry
+            print(f"Attempt {attempt}: No response content received during simple fallback")
+            return _select_template(transcript, attempt + 1)
 
     except Exception as e:
-        print(f"Attempt {attempt}: Error in JSON fallback for template selection: {e}")
+        print(f"Attempt {attempt}: Error in fallback for template selection: {e}")
         update_status("Unable to select template using AI. Choose a template manually or change transcription model.")
         return None
 
@@ -153,7 +150,7 @@ def _get_template_content(template_name: str) -> Optional[str]:
 
 def _create_structured_report(transcript: str, template_content: str) -> Optional[str]:
     """Generate structured report using template content"""
-    client = OpenAI(api_key=config.TEXT_API_KEY, base_url=config.BASE_URL)
+    client = _get_openai_client()
 
     if not template_content:
         return "Error: Template content is empty."
@@ -190,7 +187,10 @@ This is the report template formattemplate:\n{template_content}
 """},
                 {"role": "user", "content": "This is the transcribed text generated by Voice-to-Text Model after transcribing from audio which needs to be restructured, formatted, and corrected according to the provided system instructions.\n\n" + transcript}
             ],
-            temperature=0.1
+            temperature=0.1,
+            frequency_penalty=1.1,
+            presence_penalty=1.0,
+            max_tokens=1024
         )
         if response.choices and response.choices[0].message.content:
             return response.choices[0].message.content
@@ -206,7 +206,7 @@ This is the report template formattemplate:\n{template_content}
 
 def _analyze_recommendation_needs(structured_report: str, attempt: int = 1) -> Tuple[bool, List[str]]:
     """Determine if recommendations are needed and select from AVAILABLE guidelines using tool-use, with fallback to JSON chat completion."""
-    client = OpenAI(api_key=config.TEXT_API_KEY, base_url=config.BASE_URL)
+    client = _get_openai_client()
     guidelines = _get_file_list(GUIDELINES_DIR, ".md")
     
     if attempt > 3:
@@ -266,56 +266,41 @@ def _analyze_recommendation_needs(structured_report: str, attempt: int = 1) -> T
            update_status("Error analyzing recommendations.🤖")
 
 
-    # Fallback to JSON chat completion
+    # Fallback to simple text matching
     try:
-        prompt = f"Analyze the following structured report:\n{structured_report}\n\nAvailable guidelines: {', '.join(guidelines)}\n\nBased on this analysis, determine if clinical recommendations are needed, and if so, select appropriate guidelines. Your output should ONLY be a JSON object with this structure: {{\"recommendations_needed\": true/false, \"selected_guidelines\": [\"filename1\", \"filename2\", ...] or null if no guideline is selected }}. If no recommendations are needed, then the selected_guidelines key should be null. Ensure a valid JSON is generated"
-        print (f"Attempt {attempt}: Trying JSON fallback for recommendation analysis")
+        prompt = f"Analise o seguinte laudo estruturado:\n{structured_report}\n\nDiretrizes disponíveis: {', '.join(guidelines)}\n\nQuais dessas diretrizes são necessárias para este laudo? Responda APENAS com os nomes dos arquivos de diretrizes aplicáveis separados por vírgula (por exemplo: 'TIRADS.md, PIRADS.md'). Se nenhuma diretriz for necessária, responda APENAS 'Nenhuma', sem explicações."
+        print(f"Attempt {attempt}: Trying simple fallback for recommendation analysis")
         response = client.chat.completions.create(
             model=config.SELECTED_MODEL,
             messages=[{"role": "user", "content": prompt}],
-             temperature = 0.1
+            temperature=0.1,
+            max_tokens=100
         )
-
+        print(f"Attempt {attempt}: Simple fallback response received: {response}")
         if response.choices and response.choices[0].message.content:
             content = response.choices[0].message.content.strip()
-
-            # Attempt to extract JSON from markdown code block, else parse if it is not code block
-            match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', content)
-            if match:
-                json_string = match.group(1).strip()
+            
+            if "nenhuma" in content.lower():
+                print(f"Attempt {attempt}: Simple fallback success, no recommendations needed.")
+                return False, []
+                
+            selected = []
+            for guide in guidelines:
+                if guide.lower() in content.lower():
+                    selected.append(guide)
+            
+            if selected:
+                print(f"Attempt {attempt}: Simple fallback success, recommendations needed. Selected: {selected}")
+                return True, selected
             else:
-                json_string = content # Try to parse content if it is not a code block
-
-            try:
-                json_output = json.loads(json_string)
-                if "recommendations_needed" in json_output and "selected_guidelines" in json_output:
-                    recommendations_needed = json_output["recommendations_needed"]
-                    selected_guidelines = json_output["selected_guidelines"]
-                    
-                    if recommendations_needed and selected_guidelines is None:
-                       print ("Recommendations needed is True but guidelines is None. This is not expected")
-                       return _analyze_recommendation_needs(structured_report, attempt + 1) # Recursive retry
-                    
-                    if selected_guidelines is not None: # If any guidelines were selected
-                       for guide in selected_guidelines:
-                         if guide not in guidelines:
-                            print (f"Attempt {attempt}: Invalid guideline selected by model")
-                            return _analyze_recommendation_needs(structured_report, attempt + 1) # Recursive retry
-                    print (f"Attempt {attempt}: JSON fallback success for recommendation analysis, recommendations_needed: {recommendations_needed}, selected_guidelines:{selected_guidelines}")
-                    return recommendations_needed, selected_guidelines if selected_guidelines else [] # Return [] if None (meaning no guide is selected)
-                else:
-                    print(f"Attempt {attempt}: Invalid JSON format in JSON fallback for recommendation analysis")
-                    return _analyze_recommendation_needs(structured_report, attempt + 1) # Recursive retry
-
-            except JSONDecodeError as e:
-                 print(f"Attempt {attempt}: Invalid JSON received in JSON fallback for recommendation analysis: {e}")
-                 return _analyze_recommendation_needs(structured_report, attempt + 1) # Recursive retry
+                print(f"Attempt {attempt}: No matching guidelines found in response: '{content}'")
+                return False, []
         else:
-            print(f"Attempt {attempt}: No response content received during JSON fallback for recommendation analysis")
-            return _analyze_recommendation_needs(structured_report, attempt + 1)  # Recursive retry
+            print(f"Attempt {attempt}: No response content received during simple fallback")
+            return False, []
 
     except Exception as e:
-         print(f"Attempt {attempt}: Error in JSON fallback for _analyze_recommendation_needs: {e}")
+         print(f"Attempt {attempt}: Error in fallback for _analyze_recommendation_needs: {e}")
          update_status("Error analyzing recommendations.🤖")
          return False, []
 
@@ -335,7 +320,7 @@ def _validate_guidelines(potential_guides: List[str]) -> Tuple[List[str], List[s
 
 def _generate_recommendations(structured_report: str, guides: List[str]) -> Optional[str]:
     """Generate recommendations using validated guidelines"""
-    client = OpenAI(api_key=config.TEXT_API_KEY, base_url=config.BASE_URL)
+    client = _get_openai_client()
     if not guides:
         return "No applicable guidelines available for these findings"
 
@@ -361,7 +346,10 @@ def _generate_recommendations(structured_report: str, guides: List[str]) -> Opti
                 "role": "user",
                 "content": structured_report
             }],
-            temperature=0.1
+            temperature=0.1,
+            frequency_penalty=1.1,
+            presence_penalty=1.0,
+            max_tokens=1024
         )
         # print(f"Recommendaitons generated: {response.choices[0].message.content}")
         if response.choices and response.choices[0].message.content:
@@ -434,6 +422,8 @@ def format_text(text):
             return None
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         update_status(f"Failed to generate formatted report. Error: {str(e)}")
         return None
 

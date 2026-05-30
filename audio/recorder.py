@@ -30,9 +30,19 @@ def record_audio():
     if config.multimodal_pref and config.MM_API_KEY is None:
         update_status("Please Save/Unlock your Multimodal Model API key in Settings.")
         return
-    if not config.multimodal_pref and (config.TRANSCRIPTION_API_KEY is None or config.TEXT_API_KEY is None):
-        update_status("Please Save/Unlock your Transcription and Text Model API keys in Settings.")
-        return
+    if not config.multimodal_pref:
+        is_local_asr = getattr(config, 'ASR_BACKEND', 'api') == "local"
+        is_local_text = "localhost" in getattr(config, 'BASE_URL', '') or "127.0.0.1" in getattr(config, 'BASE_URL', '')
+        
+        needs_asr_key = not is_local_asr and config.TRANSCRIPTION_API_KEY is None
+        needs_text_key = not is_local_text and config.TEXT_API_KEY is None
+        
+        if needs_asr_key or needs_text_key:
+            missing_keys = []
+            if needs_asr_key: missing_keys.append("Transcription")
+            if needs_text_key: missing_keys.append("Text")
+            update_status(f"Please Save/Unlock your {' and '.join(missing_keys)} Model API keys in Settings.")
+            return
 
     recording = True
     paused = False
